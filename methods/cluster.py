@@ -9,7 +9,6 @@ import logging
 class Cluster(NodeMixin):
     # Input attributes
     ids: np.ndarray # shape: (n, )
-    tau: float
 
     # Cluster attributes
     identifier: int = field(default_factory=count().__next__)
@@ -31,6 +30,7 @@ class Cluster(NodeMixin):
     max_value: float = -np.inf
     Rsq: float = None
 
+    tau: float = 1
     confidence_level: float = 0.9
     n_min: int = 5
 
@@ -42,6 +42,9 @@ class Cluster(NodeMixin):
 
     def __post_init__(self):
         n = len(self.ids)
+
+        assert n > 0
+
         self.Dsq = np.zeros((n, n))
         self.local_ids = {idx: i for i, idx in enumerate(self.ids)}
 
@@ -52,12 +55,16 @@ class Cluster(NodeMixin):
         else:
             string += "[INACTIVE]"
         return string
+    
+    def __eq__(self, other):
+        return self.identifier == other.identifier
  
-    def _copy(self):
-        """Copy the cluster, with reset statistics"""
-        copy = Cluster(ids=self.ids)
-        copy.identifier = self.identifier
-        return copy
+    def reset(self):
+        """Reset the cluster"""
+        self.__post_init__()
+        self.n_updates = 0
+        self.is_active = True
+        self.children = []
     
     def print_tree(self):
         for pre, fill, node in RenderTree(self):
@@ -66,6 +73,10 @@ class Cluster(NodeMixin):
     def is_leaf(self):
         """Check if the cluster is a leaf"""
         return not self.children
+    
+    def is_singleton(self):
+        """Check if the cluster is a singleton"""
+        return len(self.ids) == 1
 
     def get_leaves(self):
         """Get the leaves of the tree"""
@@ -124,12 +135,15 @@ class Cluster(NodeMixin):
         assert len(ids) == len(vals)
         assert len(ids) > 0
 
-        self.n_updates += 1
-
         # Cut to ids and values that are in this cluster
         tmp = np.isin(ids, self.ids)
         ids = ids[tmp]
         vals = vals[tmp]
+
+        if len(ids) == 0:
+            return
+        
+        self.n_updates += 1
 
         # Get the local indices of the updated observations through idx
         update_ids = [self.local_ids[idx] for idx in ids]
@@ -151,8 +165,14 @@ class Cluster(NodeMixin):
         if self.n_updates <= self.n_min:
             return False
         
-        # Check if the Hoeffding bound is violated
         e = self.hoeffding_bound
+
+        # DEBUG
+        if self.delta is None or e is None:
+            logging.info(f"Cluster {self.identifier} has not been initialized yet")
+            return False
+        
+        # Check if the Hoeffding bound is violated
         if ( self.delta > e ) or ( self.tau > e ):
             if ( (self.d1 - self.d0) * abs((self.d1 - self.davg) - (self.davg - self.d0)) ) > e:
                 self.split()
@@ -171,6 +191,10 @@ class Cluster(NodeMixin):
         # Assign the observations to the new clusters based on the pivot indices
         c1_ids = self.ids[self.Dsq[x1] < self.Dsq[y1]]
         c2_ids = self.ids[self.Dsq[x1] >= self.Dsq[y1]]
+
+        # Add pivots to the clusters to prevent empty clusters
+        c1_ids = np.append(c1_ids, self.ids[x1])
+        c2_ids = np.append(c2_ids, self.ids[y1])
 
         # Create new clusters
         c1 = Cluster(ids=c1_ids)
@@ -211,6 +235,11 @@ class Cluster(NodeMixin):
         d1 = self.d1
         pd1 = self.parent.d1
 
+        # TODO DEBUG
+        if d1 is None or pd1 is None or e is None or pe is None:
+            logging.info(f"Cluster {self.identifier} has not been initialized yet")
+            return False
+
         if (d1 - pd1) > max(e,pe):
             logging.info(f"Merging cluster {self.identifier} with parent {self.parent.identifier}, stats d1: {self.d1}, pd1: {self.parent.d1}, e: {self.hoeffding_bound}, pe: {self.parent.hoeffding_bound}")
 
@@ -223,14 +252,7 @@ class Cluster(NodeMixin):
         """
         Merge the children of this cluster
         """
-        new_c = self._copy()
-
-        # Replace this node in the tree with the new cluster
-        pchildren = self.parent.children
-        pchildren[pchildren.index(self)] = new_c
-        new_c.parent = self.parent
-
-        self.deactivate()
+        self.reset()
 
 
 
