@@ -1,7 +1,5 @@
 from anytree import NodeMixin, RenderTree
-from itertools import combinations_with_replacement
 from collections import OrderedDict
-import numpy as np
 from math import sqrt, log
 
 

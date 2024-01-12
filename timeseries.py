@@ -1,4 +1,3 @@
-from skmultiflow.data.regression_generator import RegressionGenerator
 import numpy as np
 
 class SinGenerator:
