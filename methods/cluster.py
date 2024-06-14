@@ -4,11 +4,13 @@ from collections import OrderedDict
 from anytree import NodeMixin, RenderTree
 import numpy as np
 import logging
+from typing import List
 
 @dataclass
 class Cluster(NodeMixin):
     # Input attributes
     ids: np.ndarray # shape: (n, )
+    names: np.ndarray
 
     # Cluster attributes
     identifier: int = field(default_factory=count().__next__)
@@ -51,7 +53,7 @@ class Cluster(NodeMixin):
     def __str__(self):
         string = f"Cluster {self.identifier}: "
         if self.is_active:
-            string += str(self.ids)
+            string += str(self.names[self.ids])
         else:
             string += "[INACTIVE]"
         return string
@@ -197,8 +199,8 @@ class Cluster(NodeMixin):
         c2_ids = np.append(c2_ids, self.ids[y1])
 
         # Create new clusters
-        c1 = Cluster(ids=c1_ids)
-        c2 = Cluster(ids=c2_ids)
+        c1 = Cluster(ids=c1_ids, names=self.names)
+        c2 = Cluster(ids=c2_ids, names=self.names)
 
         # Set the new clusters as children
         self.children = [c1, c2]
